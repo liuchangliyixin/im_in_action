@@ -1,0 +1,31 @@
+NIO基础
+    Buffer类是一个非线程安全的类
+    8种缓冲区类：ByteBuffer/CharBuffer/ShortBuffer/IntBuffer/LongBuffer/FloatBuffer/DoubleBuffer/MappedByteBuffer
+    Buffer的重要属性：
+        capacity--容量
+            一经初始化就不再改变，capacity不是指内存块byte数组的大小，而是写入的数据对象(对应各种数据类型)的数量。
+        position--读写位置
+            缓冲区中下一个要被读或写的元素的索引
+        limit--读写限制
+            缓冲区中当前的数据量
+        mark--标记
+            使用mark()方法标记position的位置，再使用reset()方法可以恢复position到mark()方法标记的位置
+
+    Channel
+        NIO中一个连接用Channel表示。更广泛的层面来说，一个通道可以表示一个底层的文件描述符，例如硬件设备、文件、网络连接等。
+        除了可以对应底层文件描述符，NIO Channel 还可以细化到对应不同的网络传输协议。
+
+        主要类型：
+            FileChannel:
+                文件通道，用于文件数据的读写。
+                阻塞模式，不能设置为非阻塞模式。
+
+            SocketChannel:
+                套接字通道，用于Socket套接字TCP连接的数据读写。
+
+            ServerSocketChannel:
+                服务器套接字通道，为每个监听到的TCP连接请求，创建一个SocketChannel套接字通道。
+
+            DatagramChannel:
+                数据报通道，用于UDP协议的数据读写。
+
