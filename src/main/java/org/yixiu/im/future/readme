@@ -1,0 +1,73 @@
+join异步阻塞
+    在Java中，线程的合并流程是：假设A线程调用了B线程的join方法，合并B线程。那么，A线程进入阻塞状态，直到B线程完成。
+    join方法有三个重载版本：
+        public final void join() throws InterruptedException
+            A线程等待B线程执行结束后，A线程重新恢复执行
+        public final synchronized void join(long millis) throws InterruptedException
+            A线程最长等待B线程millis毫秒，超过时间后，不论B线程是否结束，A线程重新恢复执行。
+        public final synchronized void join(long millis, int nanos) throws InterruptedException
+            A线程最长等待B线程millis毫秒+nanos纳秒，超过时间后，不论B线程是否结束，A线程重新恢复执行。
+    join的问题：
+        被合并的线程没有返回值。join线程合并只能发起合并线程，不能取得执行结果。
+
+FutureTask
+    Callable接口相对于Runnable接口除了具有返回值外还有一个很大的不同：
+        Callable接口的实例不能作为Thread线程实例的target来使用，而Runnable接口的实例可以作为Thread线程实例的target构造参数，开启一个Thread线程。
+    那么Callable实例想要异步执行，就需要赋值给Thread的target---一个Runnable类型的成员。
+    为此，Java提供了一个在Callable实例和Thread的target成员之间一个搭桥的类---FutureTask类。
+
+    FutureTask封装了Callable，可以执行Callable的call方法，间接继承了Runnable接口，从而可以作为Thread的target。
+    外部想要获取Callable的异步执行结果，不是调用call方法，而是需要通过FutureTask类的相应方法去获取。
+    在FutureTask类的内部，会将Callable的call方法的真正结果保存起来(private Object outcome;)，以供外部获取。
+    FutureTask类的一系列操作被抽象出一个重要接口---Future接口。
+
+    Future接口：主要是对并发任务的执行以及获取其结果的一些操作。
+        boolean cancel(boolean mayInterruptIfRunning);
+            取消并发任务的执行
+        boolean isCancelled();
+            获取并发任务的取消状态。如果任务完成前被取消，则返回true。
+        boolean isDone();
+            获取并发任务的执行状态。如果任务执行结束，则返回true。
+        V get() throws InterruptedException, ExecutionException;
+            获取并发任务的执行结果。如果并发任务没有完成，则会一直阻塞直到并发任务执行完成。
+        V get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException;
+            同上面的get方法，但是会有阻塞时间限制，如果超过设定的timeout时间限制，会抛出异常。
+
+    FutureTask虽然能获取异步线程的结果，但也和join一样是阻塞的。异步阻塞的效率是很低的。
+
+Netty的异步回调
+    对于JavaFuture异步任务的扩展：
+        继承Java的Future接口，得到了一个新的属于Netty自己的Future异步任务接口；
+        引入了一个新的接口---GenericFutureListener，用于表示异步执行完成的监听器。
+            Netty使用了监听器模式，异步任务的执行完成后的回调逻辑抽象成了Listener监听器接口，
+            可以将Netty的GenericFutureListener监听器接口加入Netty异步任务Future中，实现对异步任务执行状态的事件监听。
+
+    GenericFutureListener拥有一个回调方法：operationComplete，表示异步任务操作完成。在Future异步任务执行完成后，将回调此方法。
+    在大多数情况下，Netty的异步回调代码编写在GenericFutureListener接口的实现类中的operationComplete方法中。
+
+    Netty的Future接口一般不会直接使用，而是会使用其子接口，例如ChannelFuture子接口表示通道IO操作的异步任务：
+        如果在通道的异步IO操作完成后，需要执行回调操作，就需要使用到ChannelFuture接口。
+
+    在Netty网络编程中，网络连接通道的输入和输出处理都是异步进行的，都会返回一个ChannelFuture接口的实例。
+    通过返回的异步任务的实例，可以为它增加异步回调的监听器，在异步任务真正完成后，回调才会完成。
+    示例：
+        ChannelFuture future = bootstrap.connect(new InetSocketAddress("127.0.0.1",8080));
+        future.addListener(new ChannelFutureListener(){
+            @Override
+            public void operationComplete(ChannelFuture channelFuture) throws Exception{
+                if(channelFuture.isSuccess()){
+                    System.out.println("Connection established");
+                }else{
+                    System.err.println("Connection attempt failed");
+                    channelFuture.cause().printStackTrace();
+                }
+            }
+        });
+
+
+
+
+
+
+
+

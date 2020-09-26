@@ -29,3 +29,54 @@ NIO基础
             DatagramChannel:
                 数据报通道，用于UDP协议的数据读写。
 
+    Selector
+        选择器的使命是完成IO的多路复用。
+        一个通道代表一个连接通路，通过选择器可以同时监控多个通道的IO状况。选择器和通道的关系，是监控和被监控的关系。
+        一个单线程处理一个选择器，一个选择器可以监控多个通道(极端情况下，只用一个线程就可以处理数万个连接的通道，大大减少线程间上下文切换的开销)。
+        通道通过调用Channel#register方法完成注册，register方法的第一个参数指定要注册的选择器实例，第二个参数指定选择器要监控的IO事件类型。
+
+        可监控的事件类型：
+            可读：SelectionKey.OP_READ--SocketChannel有数据可读
+            可写：SelectionKey.OP_WRITE--SocketChannel等待数据写入
+            连接：SelectionKey.OP_CONNECT--SocketChannel完成了和对端的握手连接
+            接收：SelectionKey.OP_ACCEPT--ServerSocketChannel监听到一个新连接的到来
+
+            同时监控多个事件，可以使用 按位或(|) 来实现。
+
+        一个通道可以被监控需要继承SelectableChannel类。
+
+        SelectionKey 选择键
+            选择键简单来说就是被选择器选中的IO事件。
+            通过选择键我们可以：
+                获得通道的IO事件类型。
+                获得发生IO事件的通道。
+                获得选出选择键的选择器实例。
+
+        选择器使用流程：
+            获取选择器实例
+            将通道注册到选择器中
+            轮询感兴趣的IO就绪事件(选择键集合)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
