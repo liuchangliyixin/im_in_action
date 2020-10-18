@@ -1,0 +1,45 @@
+Reactor反应器模式
+    反应器模式由Reactor反应器线程、Handlers处理器两大角色组成：
+        Reactor反应器线程：负责响应IO事件，并且分发到Handlers处理器
+        Handlers处理器：非阻塞地执行业务处理逻辑
+
+    单线程的Reactor反应器模式
+        Reactor反应器和Handlers处理器在一个线程中执行。
+        SelectionKey选择键重要成员方法：
+            public final Object attach(Object ob) {
+                return attachmentUpdater.getAndSet(this, ob);
+            }
+            此方法可以将任何Java POJO对象作为附件属性添加到SelectionKey实例，相当于附件属性的setter方法。
+            在单线程版本的反应器模式中，需要将Handler处理器实例，作为附件添加到SelectionKey实例。
+
+            public final Object attachment() {
+                return attachment;
+            }
+            与attach方法配套使用，相当于附件属性的getter方法。
+            当IO事件发生时，选择键被select方法选到，可以直接将事件的附件取出，也就是之前绑定的Handler处理器实例，通过该Handler，完成相应的处理。
+
+        整体的逻辑：
+            在选择键注册完成之后，调用attach方法，将Handler处理器绑定到选择键；当事件发生时，调用attachment方法，可以从选择键取出Handler处理器，
+            将事件分发到Handler处理器，完成业务处理。
+
+        优点：相对于OIO，不再需要启动很多的线程来处理每条连接，效率提升。
+        缺点：
+            因为Reactor反应器和Handlers处理器都在一个线程上，如果某个Handler阻塞，会导致反应器和处理器都不可用。
+            目前服务器都是多核的，单线程模式不能充分利用多核资源。
+
+    多线程的Reactor反应器模式
+        升级Handler处理器：既要使用多线程，又要高效率，使用线程池。
+        升级Reactor反应器：引入多个Selector选择器，提升选择大量通道的能力。
+
+        基本模式：
+            将负责输入输出处理的IOHandler处理器的执行，放入独立的线程池中。
+            这样，业务处理线程与负责服务监听和IO事件查询的反应器线程相隔离，避免服务器的连接监听受到阻塞。
+
+            如果服务器为多核的CPU，可以将反应器线程拆分为多个子反应器(SubReactor)线程；同时，引入多个选择器，每个SubReactor子线程负责一个选择器。
+            这样，充分释放了系统资源的能力；也提高了反应器管理大量连接，提升选择大量通道的能力。
+
+        案例设计：
+            1、引入多个选择器
+            2、设计新的子反应器类，一个子反应器负责查询一个选择器
+            3、开启多个反应器处理线程，一个线程负责执行一个子反应器。
+            为了提升效率，建议子反应器的数量和选择器的数量一致。避免多个线程负责一个选择器，导致需要进行线程同步，引起效率低下。
