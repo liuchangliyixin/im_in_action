@@ -1,0 +1,142 @@
+ByteBuf
+    Netty提供了ByteBuf来代替Java NIO的ByteBuffer来操作内存缓冲区。
+    ByteBuf相对于ByteBuffer的优势：
+        Pooling(池化，减少了内存复制和GC，提升了效率)
+        复合缓冲区类型，支持零复制
+        不需要调用flip方法切换读写模式
+        扩展性好，例如StringBuffer
+        可以自定义缓冲区类型
+        读取和写入索引分开
+        方法的链式调用
+        可以进行引用计数，方便重复使用
+    ByteBuf的逻辑部分
+        废弃(已经使用的无效字节)  可读(ByteBuf中保存的有效数据)  可写(写入的数据都写入到这里)  可扩容(该ByteBuf最多还能扩容的大小)
+    重要属性
+        readerIndex
+        writerIndex
+        maxCapacity
+        这三个属性定义在AbstractByteBuf抽象类中，它们与上面逻辑部分的关系如下：
+            废弃  readerIndex  可读  writerIndex  可写 [capacity()--一个成员方法，代表可以写入的容量，但不是最大容量] 可扩容  maxCapacity
+    三组方法
+        容量
+            capacity()
+                表示ByteBuf的容量，它的值是这三部分之和：废弃的字节数、可读字节数和可写字节数
+            maxCapacity()
+                表示ByteBuf能够容纳的最大字节数。当向ByteBuf中写入数据容量不足时则进行扩容，直到maxCapacity设定的上限。
+        写入
+            isWritable()
+                表示ByteBuf是否可写。如果capacity()>writerIndex则表示可写，否则为不可写。
+                注意如果isWritable()返回false，并不代表不能再往ByteBuf中写入数据，因为Netty会自动扩容ByteBuf。
+            writableBytes()
+                取得可写入的字节数，即capacity()-writerIndex。
+            maxWritableBytes()
+                取得最大可写入字节数，即maxCapacity-writerIndex。
+            writeBytes(byte[] src)
+                把src字节数组中的数据全部写入ByteBuf。
+            writeTYPE(TYPE value)
+                写入基础数据类型的数据，TYPE代表具体的基础数据类型(8种)。
+            setTYPE(TYPE value)
+                基础数据类型的设置，不改变writerIndex指针，TYPE代表具体的基础数据类型(8种)。
+            markWriterIndex() 与 resetWriterIndex()
+                markWriterIndex将当前的写指针writerIndex的属性值保存在markedWriterIndex属性中；
+                resetWriterIndex将之前保存在markedWriterIndex属性值恢复到写指针writerIndex的属性中。
+        读取
+            isReadable()
+                返回ByteBuf是否可读。writerIndex>readerIndex表示可读，否则不可读。
+            readableBytes()
+                返回ByteBuf当前可读取的字节数，即writerIndex-readerIndex。
+            readBytes(byte[] dst)
+                读取ByteBuf中的数据到dst字节数组中。这里dst字节数组的大小通常等于readableBytes()。
+            readTYPE()
+                读取基础数据类型的数据，TYPE代表具体的基础数据类型(8种)。
+            getTYPE()
+                读取基础数据类型的数据但不改变指针，TYPE代表具体的基础数据类型(8种)。
+            markReaderIndex() 与 resetReaderIndex()
+                markReaderIndex将当前的读指针readerIndex的属性值保存在markedReaderIndex属性中；
+                resetReaderIndex将之前保存在markedReaderIndex属性值恢复到读指针readerIndex的属性中。
+    ByteBuf的引用计数
+        Netty的ByteBuf的内存回收工作是通过引用计数的方式管理的。
+        Netty采用计数器来追踪ByteBuf的生命周期，一是对Pooled ByteBuf的支持，二是能够尽快发现那些可以回收的ByteBuf(非Pooled)，以便提升ByteBuf的分配和销毁效率。
+        引用计数的规则：
+            在默认情况下，当创建完一个ByteBuf时，它的引用为1，每次调用retain()方法，它的引用计数就加1；每次调用release()方法，它的引用计数就减1；
+            如果引用计数为0，再次访问这个ByteBuf对象，将会抛出异常；如果引用计数为0，表示这个ByteBuf没有进程引用它，它所占用内存需要被回收。
+        为了确保引用计数不会混乱，在Netty的业务处理器开发过程中，应该坚持一个原则：retain和release方法应该结对使用：
+            public void handleMethod(ByteBuf byteBuf){
+                byteBuf.retain();
+                try{
+                    otherHandleMethod(byteBuf);
+                }finally{
+                    byteBuf.release();
+                }
+            }
+            如果方法中没有使用到retain和release方法，则缓冲区使用完成后，调用一次release方法就会释放所使用的的缓冲区。
+            例如由在流水线的最后一个Handler处理器负责调用release方法来释放缓冲区的内存空间。
+        当引用计数为0，Netty会进行ByteBuf的回收：
+            Pooled池化的内存回收方法是：放入可以重新分配的ByteBuf的池子，等待下一次分配；
+            UnPooled未池化的ByteBuf缓冲区：
+                如果是堆(Heap)结构缓冲区，会被JVM的垃圾回收机制回收；
+                如果是直接内存(Direct)结构缓冲区，调用本地方法释放外部内存(unsafe.freeMemory)。
+    ByteBuf的Allocator分配器
+        ByteBufAllocator的两种实现：
+            PooledByteBufAllocator
+                池化ByteBuf分配器，将ByteBuf实例放入池中，采用jemalloc高效内存分配策略。
+            UnpooledByteBufAllocator
+                非池化ByteBuf分配器，每次被调用时，返回一个新的ByteBuf实例；通过Java垃圾回收机制回收。
+
+        在Netty中，默认的分配器为ByteBufAllocator.DEFAULT，可以通过Java系统参数(System Property)的选项io.netty.allocator.type进行配置，
+        配置时使用字符串值："unpooled"，"pooled"。
+
+        在Netty启动器BootStrap的配置中可以将PooledByteBufAllocator设置为默认分配器：
+            ServerBootStrap b = new ServerBootStrap()
+            ...
+            b.option(ChannelOption.SO_KEEPALIVE,true);
+            b.option(ChannelOption.ALLOCATOR,PooledByteBufAllocator.DEFAULT);
+            b.childOption(ChannelOption.ALLOCATOR,PooledByteBufAllocator.DEFAULT);
+            ...
+
+        使用分配器分配ByteBuf的主要方法：
+            //分配器默认分配初始容量为9，最大容量为100的缓冲区
+            ByteBuf buffer = ByteBufAllocator.DEFAULT.buffer(9,100);
+            //分配器默认分配初始容量为256，最大容量为Integer.MAX_VALUE的缓冲区
+            ByteBuf buffer = ByteBufAllocator.DEFAULT.buffer();
+            //非池化分配器，分配基于Java的堆(Heap)结构内存缓冲区
+            ByteBuf buffer = UnpooledByteBufAllocator.DEFAULT.heapBuffer();
+            //池化分配器，分配基于操作系统管理的直接内存缓冲区
+            ByteBuf buffer = PooledByteBufAllocator.DEFAULT.directBuffer();
+    ByteBuf缓冲区类型
+        Heap
+            内部数据为一个Java数组，存储在JVM的堆空间中，通过hasArray来判断是不是堆缓冲区。
+            优点是在未使用池化的情况下，能提供快速的分配和释放。
+            不足是写入底层传输通道之前，都会复制到直接缓冲区。
+        Direct
+            内部数据存储在操作系统的物理内存中。
+            优点是：能获取超过JVM堆限制大小的内存空间；写入传输通道比堆缓冲区更快。
+            不足是：释放和分配空间昂贵(使用系统的方法)；在Java中操作时需要复制一次到堆上。
+        Composite
+            多个缓冲区组合表示，方便一次操作多个缓冲区实例。
+
+        这三种缓冲区都可以通过池化和非池化两种分配器来创建和分配内存空间。
+
+        Heap ByteBuf VS Direct ByteBuf
+            1、创建方法：Heap ByteBuf通过调用分配器的heapBuffer方法来创建；Direct ByteBuf通过调用分配器的directBuffer方法来创建。
+            2、Heap ByteBuf缓冲区可以通过array()方法读取内部数据；而Direct Buffer缓冲区不能读取内部数组。
+            3、可以通过hasArray方法判断是否为Heap，如果hasArray返回true就表示是Heap缓冲区，否则可能为Direct或Composite。
+            4、Direct缓冲区需要通过getBytes/readBytes等方法先将数据复制到Java的堆内存才能进行具体的业务计算。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
